@@ -90,7 +90,6 @@ def push_to_sheets(rows):
 
     collected_at = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 완전 로그형: 기존 데이터 비교 없이 이번 수집 시각만 붙여서 전부 append
     enriched_rows = []
     for row in rows:
         new_row = dict(row)
