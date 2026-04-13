@@ -47,7 +47,7 @@ def fetch_auction_data():
     result_msg = header.get("resultMsg")
     print(f"resultCode: {result_code}, resultMsg: {result_msg}")
 
-    if result_code not in ("00", "INFO-000"):
+    if result_code not in ("00", "0", "INFO-000"):
         raise ValueError(f"API 오류: {result_code} / {result_msg}")
 
     total_count = int(body.get("totalCount", 0))
