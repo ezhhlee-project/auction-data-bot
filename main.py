@@ -1,77 +1,56 @@
-import os
-import json
-import requests
-import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime, timedelta
-
-# 1. 설정
-API_KEY = os.getenv('API_KEY')
-GCP_JSON = os.getenv('GCP_JSON')
-ENDPOINT = 'https://apis.data.go.kr/B552845/katRealTime2'
-SHEET_NAME = '도매시장_경매데이터_수집'
-
 def fetch_data(target_date):
     print(f">>> {target_date} 날짜 데이터 수집 시도 중...")
+    
+    # 인증키를 URL에 직접 넣지 않고 params로 전달하되, 
+    # API에 따라 인코딩된 키와 디코딩된 키 중 하나만 작동하는 경우가 있습니다.
     params = {
-        'serviceKey': API_KEY,
+        'serviceKey': API_KEY, # 인증키
         'delngDe': target_date,
         'pageNo': '1',
         'numOfRows': '100',
         'type': 'json'
     }
-    try:
-        response = requests.get(ENDPOINT, params=params, timeout=30)
-        res_json = response.json()
-        items = res_json.get('response', {}).get('body', {}).get('items', [])
-        
-        if not items:
-            # 만약 items가 리스트가 아니라 딕셔너리 하나인 경우 대응
-            item_data = res_json.get('response', {}).get('body', {}).get('items', {}).get('item', [])
-            return pd.DataFrame(item_data) if isinstance(item_data, list) else pd.DataFrame([item_data]) if item_data else pd.DataFrame()
-            
-        return pd.DataFrame(items)
-    except Exception as e:
-        print(f"API 호출 에러 ({target_date}): {e}")
-        return pd.DataFrame()
-
-def main():
-    # 오늘과 어제 데이터를 모두 시도 (데이터가 없는 경우 대비)
-    today = datetime.now().strftime('%Y%m%d')
-    yesterday = (datetime.now() - timedelta(1)).strftime('%Y%m%d')
     
-    df_today = fetch_data(today)
-    df_yesterday = fetch_data(yesterday)
-    df_total = pd.concat([df_yesterday, df_today])
-
-    if df_total.empty:
-        print("!!! 수집된 데이터가 전혀 없습니다. API 응답을 확인해주세요.")
-        return
-
     try:
-        print(">>> 구글 시트 연결 시도 중...")
-        creds_dict = json.loads(GCP_JSON)
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
+        # 1. API 호출
+        response = requests.get(ENDPOINT, params=params, timeout=30)
         
-        sh = client.open(SHEET_NAME)
-        # 'data'라는 이름의 탭을 명시적으로 찾음
-        try:
-            worksheet = sh.worksheet("data")
-        except:
-            worksheet = sh.get_worksheet(0)
-            
-        # 데이터프레임의 결측치를 빈 문자열로 처리 (에러 방지)
-        df_total = df_total.fillna("")
-        data_list = df_total.values.tolist()
-        
-        worksheet.append_rows(data_list)
-        print(f"✅ 성공: {len(data_list)}건의 데이터를 시트에 추가했습니다.")
-        
-    except Exception as e:
-        print(f"❌ 구글 시트 작업 중 치명적 에러: {e}")
+        # 로그 확인: 응답 코드가 200이 아니면 문제 있음
+        if response.status_code != 200:
+            print(f"❌ API 서버 응답 코드 에러: {response.status_code}")
+            return pd.DataFrame()
 
-if __name__ == "__main__":
-    main()
+        # 2. 응답 내용 확인 (JSON이 아닌 에러 메시지가 올 경우 대비)
+        content = response.text.strip()
+        if not content:
+            print("❌ API 응답 내용이 비어 있습니다.")
+            return pd.DataFrame()
+        
+        if content.startswith('<'): # XML/HTML 에러 메시지가 온 경우
+            print(f"❌ API가 JSON 대신 XML/HTML을 반환함: {content[:100]}...")
+            return pd.DataFrame()
+
+        res_json = response.json()
+        
+        # 3. 데이터 추출 (구조가 유동적일 수 있음)
+        body = res_json.get('response', {}).get('body', {})
+        items = body.get('items', [])
+        
+        # items가 딕셔너리 {'item': [...]} 형태인 경우 처리
+        if isinstance(items, dict):
+            items = items.get('item', [])
+        
+        # 데이터가 하나만 있을 때 딕셔너리로 오는 경우 리스트로 변환
+        if isinstance(items, dict):
+            items = [items]
+            
+        if not items:
+            print(f"ℹ️ {target_date} 데이터가 아직 없습니다.")
+            return pd.DataFrame()
+            
+        print(f"✅ {target_date} 데이터 수집 완료 ({len(items)}건)")
+        return pd.DataFrame(items)
+
+    except Exception as e:
+        print(f"❌ API 처리 중 에러 발생: {str(e)}")
+        return pd.DataFrame()
