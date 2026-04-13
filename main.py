@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
@@ -26,18 +26,59 @@ ALLOWED_MIDDLE_CATEGORIES = {
 }
 
 
+def parse_kst_datetime(dt_str: str):
+    """
+    API의 낙찰일시(scsbd_dt)를 datetime으로 변환
+    가능한 형식을 여러 개 시도
+    """
+    if not dt_str:
+        return None
+
+    dt_str = str(dt_str).strip()
+    kst = ZoneInfo("Asia/Seoul")
+
+    formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y%m%d%H%M%S",
+        "%Y%m%d%H%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+    ]
+
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(dt_str, fmt)
+            return parsed.replace(tzinfo=kst)
+        except ValueError:
+            continue
+
+    return None
+
+
 def fetch_auction_data():
     api_key = os.getenv("KAT_API_KEY")
     if not api_key:
         raise ValueError("KAT_API_KEY 환경변수가 없습니다!")
 
-    target_date = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    kst = ZoneInfo("Asia/Seoul")
+    now_kst = datetime.now(kst)
+    one_hour_ago = now_kst - timedelta(hours=1)
+
+    # 거래정산일자는 오늘 기준으로 조회
+    target_date = now_kst.strftime("%Y-%m-%d")
+
     num_of_rows = 1000
     page_no = 1
     all_items = []
 
     print("API 호출 시작...")
     print(f"조회 날짜: {target_date}")
+    print(f"수집 시각(KST): {now_kst.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(
+        f"낙찰일시 허용 범위(KST): "
+        f"{one_hour_ago.strftime('%Y-%m-%d %H:%M:%S')} ~ {now_kst.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     while True:
         params = {
@@ -86,27 +127,39 @@ def fetch_auction_data():
         if not item_list:
             break
 
-        # 상품중분류명(gds_mclsf_nm) 기준 필터링
-        filtered_items = [
-            item for item in item_list
-            if str(item.get("gds_mclsf_nm", "")).strip() in ALLOWED_MIDDLE_CATEGORIES
-        ]
+        filtered_items = []
+        for item in item_list:
+            middle_category = str(item.get("gds_mclsf_nm", "")).strip()
+            scsbd_dt_raw = item.get("scsbd_dt", "")
+            scsbd_dt = parse_kst_datetime(scsbd_dt_raw)
+
+            # 조건 1) 상품중분류명 whitelist
+            if middle_category not in ALLOWED_MIDDLE_CATEGORIES:
+                continue
+
+            # 조건 2) 낙찰일시가 최근 1시간 이내
+            if scsbd_dt is None:
+                continue
+
+            if not (one_hour_ago <= scsbd_dt <= now_kst):
+                continue
+
+            filtered_items.append(item)
 
         print(
             f"[page {page_no}] 필터 후 건수: {len(filtered_items)} "
-            f"(허용 품목: {', '.join(sorted(ALLOWED_MIDDLE_CATEGORIES))})"
+            f"(품목 + 최근 1시간 낙찰일시 조건 적용)"
         )
 
         all_items.extend(filtered_items)
 
-        # 원본 데이터 기준 total_count를 사용하므로
-        # 페이지 순회 종료 조건은 item_list 기준으로 판단
+        # 마지막 페이지 판단은 원본 item_list 기준으로 해야 함
         if len(item_list) < num_of_rows:
             break
 
         page_no += 1
 
-    print(f"필터 적용 후 총 {len(all_items)}건 수집 완료")
+    print(f"최종 필터 적용 후 총 {len(all_items)}건 수집 완료")
     return all_items
 
 
