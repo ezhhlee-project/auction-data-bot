@@ -17,57 +17,70 @@ def fetch_auction_data():
         raise ValueError("KAT_API_KEY 환경변수가 없습니다!")
 
     target_date = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    num_of_rows = 1000
+    page_no = 1
+    all_items = []
 
-    params = {
-        "serviceKey": api_key,
-        "pageNo": "1",
-        "numOfRows": "100",
-        "returnType": "json",
-        "cond[trd_clcln_ymd::EQ]": target_date,
-    }
-
-    print("API 호출 중...")
+    print("API 호출 시작...")
     print(f"조회 날짜: {target_date}")
 
-    resp = requests.get(API_URL, params=params, timeout=30)
-    print(f"HTTP Status: {resp.status_code}")
-    print(f"응답 내용 (앞 500자): {resp.text[:500]}")
+    while True:
+        params = {
+            "serviceKey": api_key,
+            "pageNo": str(page_no),
+            "numOfRows": str(num_of_rows),
+            "returnType": "json",
+            "cond[trd_clcln_ymd::EQ]": target_date,
+        }
 
-    resp.raise_for_status()
+        resp = requests.get(API_URL, params=params, timeout=30)
+        print(f"[page {page_no}] HTTP Status: {resp.status_code}")
+        print(f"[page {page_no}] 응답 내용 (앞 300자): {resp.text[:300]}")
 
-    if "json" not in resp.headers.get("Content-Type", "").lower():
-        raise ValueError("JSON 응답이 아닙니다. 서비스키나 파라미터를 확인하세요.")
+        resp.raise_for_status()
 
-    data = resp.json()
-    response = data.get("response", {})
-    header = response.get("header", {})
-    body = response.get("body", {})
+        if "json" not in resp.headers.get("Content-Type", "").lower():
+            raise ValueError("JSON 응답이 아닙니다. 서비스키나 파라미터를 확인하세요.")
 
-    result_code = str(header.get("resultCode"))
-    result_msg = header.get("resultMsg")
-    print(f"resultCode: {result_code}, resultMsg: {result_msg}")
+        data = resp.json()
+        response = data.get("response", {})
+        header = response.get("header", {})
+        body = response.get("body", {})
 
-    if result_code not in ("00", "0", "INFO-000"):
-        raise ValueError(f"API 오류: {result_code} / {result_msg}")
+        result_code = str(header.get("resultCode"))
+        result_msg = header.get("resultMsg")
+        print(f"[page {page_no}] resultCode: {result_code}, resultMsg: {result_msg}")
 
-    total_count = int(body.get("totalCount", 0))
-    print(f"totalCount: {total_count}")
+        if result_code not in ("00", "0", "INFO-000"):
+            raise ValueError(f"API 오류: {result_code} / {result_msg}")
 
-    if total_count == 0:
-        print("데이터 없음")
-        return []
+        total_count = int(body.get("totalCount", 0))
 
-    items = body.get("items", [])
-    if isinstance(items, dict):
-        item_list = items.get("item", [])
-    else:
-        item_list = items
+        items = body.get("items", [])
+        if isinstance(items, dict):
+            item_list = items.get("item", [])
+        else:
+            item_list = items
 
-    if isinstance(item_list, dict):
-        item_list = [item_list]
+        if isinstance(item_list, dict):
+            item_list = [item_list]
+        elif item_list is None:
+            item_list = []
 
-    print(f"총 {len(item_list)}건 수집 완료")
-    return item_list
+        print(f"[page {page_no}] 수집 건수: {len(item_list)} / totalCount: {total_count}")
+
+        if not item_list:
+            break
+
+        all_items.extend(item_list)
+
+        if len(all_items) >= total_count:
+            break
+
+        page_no += 1
+
+    print(f"총 {len(all_items)}건 수집 완료")
+    return all_items
 
 
 def push_to_sheets(rows):
