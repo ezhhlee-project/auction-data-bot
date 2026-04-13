@@ -6,14 +6,11 @@ import gspread
 from datetime import datetime, timedelta
 from oauth2client.service_account import ServiceAccountCredentials
 
-# 올바른 엔드포인트
 API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
 
 def fetch_auction_data():
     api_key = os.getenv("KAT_API_KEY")
-    today = datetime.today()
-    # 어제 날짜
-    base_date = (today).strftime("%Y%m%d")
+    base_date = "20260409"
 
     params = {
         "serviceKey": api_key,
@@ -33,29 +30,27 @@ def fetch_auction_data():
         print(f"HTTP Status: {resp.status_code}")
 
         if resp.status_code != 200:
-            print(f"API 오류 응답: {resp.text[:500]}")
+            print(f"API 오류: {resp.text[:300]}")
             break
 
         data = resp.json()
         body = data.get("response", {}).get("body", {})
+        total_count = int(body.get("totalCount", 0))
+        print(f"totalCount: {total_count}")
+
+        if total_count == 0:
+            print("데이터 없음")
+            break
+
         items = body.get("items", {})
-
-        if not items:
-            print("더 이상 데이터 없음")
-            break
-
         item_list = items.get("item", []) if isinstance(items, dict) else items
-        if not item_list:
-            break
         if isinstance(item_list, dict):
             item_list = [item_list]
 
         all_rows.extend(item_list)
         print(f"Page {page}: {len(item_list)}건 수집")
 
-        total_count = int(body.get("totalCount", 0))
-        num_of_rows = int(params["numOfRows"])
-        if page * num_of_rows >= total_count:
+        if page * int(params["numOfRows"]) >= total_count:
             break
         page += 1
 
@@ -76,11 +71,10 @@ def push_to_sheets(rows):
     client = gspread.authorize(creds)
 
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
-    if spreadsheet_id:
-        spreadsheet = client.open_by_key(spreadsheet_id)
-    else:
+    if not spreadsheet_id:
         raise ValueError("SPREADSHEET_ID 환경변수가 없습니다!")
 
+    spreadsheet = client.open_by_key(spreadsheet_id)
     worksheet = spreadsheet.sheet1
 
     if not rows:
@@ -89,12 +83,10 @@ def push_to_sheets(rows):
 
     df = pd.DataFrame(rows)
 
-    # 시트가 비어있으면 헤더 먼저 추가
     existing = worksheet.get_all_values()
     if not existing:
         worksheet.append_row(df.columns.tolist())
 
-    # 데이터를 문자열로 변환해서 적재
     worksheet.append_rows(df.astype(str).values.tolist())
     print(f"{len(rows)}건 Google Sheets 적재 완료!")
 
