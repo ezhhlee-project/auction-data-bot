@@ -1,52 +1,94 @@
 import os
 import json
+import requests
 import pandas as pd
 import gspread
+from datetime import datetime, timedelta
 from oauth2client.service_account import ServiceAccountCredentials
 
-def push_to_sheets():
-    try:
-        print("--- Step 1: Loading Credentials ---")
-        # Load the GCP_JSON secret from environment variables
-        gcp_json_str = os.getenv('GCP_JSON')
-        if not gcp_json_str:
-            raise ValueError("GCP_JSON environment variable is missing!")
-        
-        credentials_dict = json.loads(gcp_json_str)
-        
-        # Define scope and authorize
-        scope = [
-            'https://spreadsheets.google.com/feeds',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
-        client = gspread.authorize(creds)
+API_URL = "https://apis.data.go.kr/B552845/katRealTime2"
 
-        print("--- Step 2: Preparing Data ---")
-        # Example: Replace this with your actual data scraping/generation logic
-        # For now, creating a dummy DataFrame to ensure it works
-        data = {
-            'Date': [pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')],
-            'Status': ['Success'],
-            'Source': ['GitHub Actions Bot']
-        }
-        df = pd.DataFrame(data)
+def fetch_auction_data():
+    api_key = os.getenv("KAT_API_KEY")
+    today = datetime.today()
+    base_date = (today - timedelta(days=1)).strftime("%Y%m%d")
 
-        print("--- Step 3: Accessing Spreadsheet ---")
-        # Replace 'Your_Spreadsheet_Name' with the actual name of your Google Sheet
-        # Make sure you have shared the sheet with the email in your GCP_JSON
-        sheet = client.open('Your_Spreadsheet_Name').get_workflow_sheet(0) 
+    params = {
+        "serviceKey": api_key,
+        "pageNo": 1,
+        "numOfRows": 1000,
+        "resultType": "json",
+        "basDt": base_date,
+    }
 
-        print("--- Step 4: Pushing Data ---")
-        # Append the data to the end of the sheet
-        sheet.append_rows(df.values.tolist())
-        print("Successfully pushed data to Google Sheets!")
+    all_rows = []
+    page = 1
 
-    except Exception as e:
-        print(f"FAILED: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        exit(1)
+    while True:
+        params["pageNo"] = page
+        resp = requests.get(API_URL, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        body = data.get("response", {}).get("body", {})
+        items = body.get("items", {})
+
+        if not items:
+            print("데이터 없음")
+            break
+
+        item_list = items.get("item", []) if isinstance(items, dict) else items
+        if not item_list:
+            break
+        if isinstance(item_list, dict):
+            item_list = [item_list]
+
+        all_rows.extend(item_list)
+        print(f"Page {page}: {len(item_list)}건 수집")
+
+        total_count = int(body.get("totalCount", 0))
+        if page * int(params["numOfRows"]) >= total_count:
+            break
+        page += 1
+
+    print(f"총 {len(all_rows)}건 수집 완료")
+    return all_rows
+
+def push_to_sheets(rows):
+    gcp_json_str = os.getenv("GCP_JSON")
+    if not gcp_json_str:
+        raise ValueError("GCP_JSON 환경변수가 없습니다!")
+
+    credentials_dict = json.loads(gcp_json_str)
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+    client = gspread.authorize(creds)
+
+    spreadsheet_id = os.getenv("SPREADSHEET_ID")
+    sheet_name = os.getenv("SHEET_NAME", "auction_data")
+
+    if spreadsheet_id:
+        spreadsheet = client.open_by_key(spreadsheet_id)
+    else:
+        spreadsheet = client.open(sheet_name)
+
+    worksheet = spreadsheet.sheet1
+
+    if not rows:
+        print("적재할 데이터 없음 — 종료")
+        return
+
+    df = pd.DataFrame(rows)
+    existing = worksheet.get_all_values()
+    if not existing:
+        worksheet.append_row(df.columns.tolist())
+
+    worksheet.append_rows(df.values.tolist())
+    print(f"{len(rows)}건 Google Sheets 적재 완료!")
 
 if __name__ == "__main__":
-    push_to_sheets()
+    rows = fetch_auction_data()
+    push_to_sheets(rows)
