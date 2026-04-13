@@ -3,7 +3,7 @@ import json
 import requests
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
 
@@ -50,11 +50,11 @@ def push_to_sheets(rows):
         raise ValueError("GCP_JSON 환경변수가 없습니다!")
 
     credentials_dict = json.loads(gcp_json_str)
-    scope = [
-        "https://spreadsheets.google.com/feeds",
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+    creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
     client = gspread.authorize(creds)
 
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
