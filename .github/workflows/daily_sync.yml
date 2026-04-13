@@ -2,9 +2,8 @@ name: Daily Auction Data Sync
 
 on:
   schedule:
-    # UTC 기준 03:30 (한국 시각 점심 12:30)
     - cron: '30 3 * * *'
-  workflow_dispatch: # 수동으로도 실행 가능하게 설정
+  workflow_dispatch: # 수동 실행 가능
 
 jobs:
   build:
@@ -12,10 +11,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4 # 최신 버전으로 업데이트
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v5 # 최신 버전으로 업데이트
       with:
         python-version: '3.9'
 
@@ -26,6 +25,7 @@ jobs:
 
     - name: Run script
       env:
+        # GitHub Secrets의 이름과 아래 ${{ secrets.이름 }}이 정확히 같아야 합니다!
         API_KEY: ${{ secrets.API_KEY }}
-        GCP_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        GCP_JSON: ${{ secrets.GCP_JSON }} 
       run: python main.py
