@@ -3,24 +3,21 @@ import json
 import requests
 import pandas as pd
 import gspread
-from datetime import datetime, timedelta
 from oauth2client.service_account import ServiceAccountCredentials
 
 API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
 
 def fetch_auction_data():
     api_key = os.getenv("KAT_API_KEY")
-    base_date = "20260409"
 
     params = {
         "serviceKey": api_key,
         "pageNo": "1",
         "numOfRows": "100",
         "type": "json",
-        "basDt": base_date,
     }
 
-    print(f"Page 1 요청 중... (날짜: {base_date})")
+    print("API 호출 중...")
     resp = requests.get(API_URL, params=params, timeout=30)
     print(f"HTTP Status: {resp.status_code}")
     print(f"응답 내용 (앞 500자): {resp.text[:500]}")
@@ -64,7 +61,7 @@ def push_to_sheets(rows):
     if not spreadsheet_id:
         raise ValueError("SPREADSHEET_ID 환경변수가 없습니다!")
 
-    print(f"SPREADSHEET_ID: {spreadsheet_id}")
+    print(f"Spreadsheet 연결 중...")
     spreadsheet = client.open_by_key(spreadsheet_id)
     worksheet = spreadsheet.sheet1
 
