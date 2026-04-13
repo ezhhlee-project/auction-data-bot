@@ -55,13 +55,13 @@ def push_to_sheets(rows):
         "https://www.googleapis.com/auth/drive",
     ]
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
-    client = gspread.authorize(creds)
+    client = gspread.Client(auth=creds)
 
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
     if not spreadsheet_id:
         raise ValueError("SPREADSHEET_ID 환경변수가 없습니다!")
 
-    print(f"Spreadsheet 연결 중...")
+    print(f"Spreadsheet 연결 중... ID: {spreadsheet_id}")
     spreadsheet = client.open_by_key(spreadsheet_id)
     worksheet = spreadsheet.sheet1
 
