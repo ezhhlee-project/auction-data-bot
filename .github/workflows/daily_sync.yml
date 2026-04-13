@@ -1,31 +1,16 @@
-name: Daily Auction Data Sync
+- name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-on:
-  schedule:
-    - cron: '30 3 * * *'
-  workflow_dispatch: # 수동 실행 가능
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4 # 최신 버전으로 업데이트
-
-    - name: Set up Python
-      uses: actions/setup-python@v5 # 최신 버전으로 업데이트
-      with:
-        python-version: '3.9'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Run script
-      env:
-        # GitHub Secrets의 이름과 아래 ${{ secrets.이름 }}이 정확히 같아야 합니다!
-        API_KEY: ${{ secrets.API_KEY }}
-        GCP_JSON: ${{ secrets.GCP_JSON }} 
-      run: python main.py
+      - name: Run Python Script with Debugging
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          GCP_JSON: ${{ secrets.GCP_JSON }}
+          # Opt-in to the newer Node version to clear that warning
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        run: |
+          echo "--- Checking File Presence ---"
+          ls -l main.py
+          echo "--- Starting Execution ---"
+          python -u main.py
