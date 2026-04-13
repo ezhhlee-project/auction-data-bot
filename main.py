@@ -26,12 +26,8 @@ def fetch_auction_data():
         "cond[trd_clcln_ymd::EQ]": target_date,
     }
 
-    print("API 호출 중...")
-    print(f"조회 날짜: {target_date}")
 
     resp = requests.get(API_URL, params=params, timeout=30)
-    print(f"HTTP Status: {resp.status_code}")
-    print(f"응답 내용 (앞 500자): {resp.text[:500]}")
 
     resp.raise_for_status()
 
@@ -51,10 +47,8 @@ def fetch_auction_data():
         raise ValueError(f"API 오류: {result_code} / {result_msg}")
 
     total_count = int(body.get("totalCount", 0))
-    print(f"totalCount: {total_count}")
 
     if total_count == 0:
-        print("데이터 없음")
         return []
 
     items = body.get("items", [])
@@ -72,7 +66,6 @@ def fetch_auction_data():
 
 def push_to_sheets(rows):
     if not rows:
-        print("적재할 데이터 없음 — 종료")
         return
 
     gcp_json_str = os.getenv("GCP_JSON")
@@ -91,7 +84,6 @@ def push_to_sheets(rows):
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
     client = gspread.Client(auth=creds)
 
-    print(f"Spreadsheet 연결 중... ID: {spreadsheet_id}")
     spreadsheet = client.open_by_key(spreadsheet_id)
     worksheet = spreadsheet.sheet1
 
