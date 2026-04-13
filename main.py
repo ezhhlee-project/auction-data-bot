@@ -10,6 +10,21 @@ from google.oauth2.service_account import Credentials
 
 API_URL = "https://apis.data.go.kr/B552845/katRealTime2/trades2"
 
+# 수집 대상 상품중분류명만 허용
+ALLOWED_MIDDLE_CATEGORIES = {
+    "노지감귤",
+    "한라봉",
+    "레드향",
+    "천혜향",
+    "카라향",
+    "당근",
+    "무",
+    "양배추",
+    "마늘",
+    "양파",
+    "브로콜리",
+}
+
 
 def fetch_auction_data():
     api_key = os.getenv("KAT_API_KEY")
@@ -36,7 +51,6 @@ def fetch_auction_data():
         resp = requests.get(API_URL, params=params, timeout=30)
         print(f"[page {page_no}] HTTP Status: {resp.status_code}")
         print(f"[page {page_no}] 응답 내용 (앞 300자): {resp.text[:300]}")
-
         resp.raise_for_status()
 
         if "json" not in resp.headers.get("Content-Type", "").lower():
@@ -55,8 +69,8 @@ def fetch_auction_data():
             raise ValueError(f"API 오류: {result_code} / {result_msg}")
 
         total_count = int(body.get("totalCount", 0))
-
         items = body.get("items", [])
+
         if isinstance(items, dict):
             item_list = items.get("item", [])
         else:
@@ -67,19 +81,32 @@ def fetch_auction_data():
         elif item_list is None:
             item_list = []
 
-        print(f"[page {page_no}] 수집 건수: {len(item_list)} / totalCount: {total_count}")
+        print(f"[page {page_no}] 원본 수집 건수: {len(item_list)} / totalCount: {total_count}")
 
         if not item_list:
             break
 
-        all_items.extend(item_list)
+        # 상품중분류명(gds_mclsf_nm) 기준 필터링
+        filtered_items = [
+            item for item in item_list
+            if str(item.get("gds_mclsf_nm", "")).strip() in ALLOWED_MIDDLE_CATEGORIES
+        ]
 
-        if len(all_items) >= total_count:
+        print(
+            f"[page {page_no}] 필터 후 건수: {len(filtered_items)} "
+            f"(허용 품목: {', '.join(sorted(ALLOWED_MIDDLE_CATEGORIES))})"
+        )
+
+        all_items.extend(filtered_items)
+
+        # 원본 데이터 기준 total_count를 사용하므로
+        # 페이지 순회 종료 조건은 item_list 기준으로 판단
+        if len(item_list) < num_of_rows:
             break
 
         page_no += 1
 
-    print(f"총 {len(all_items)}건 수집 완료")
+    print(f"필터 적용 후 총 {len(all_items)}건 수집 완료")
     return all_items
 
 
@@ -175,6 +202,7 @@ def push_to_sheets(rows):
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
+
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
     client = gspread.Client(auth=creds)
 
