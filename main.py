@@ -13,7 +13,7 @@ def fetch_auction_data():
     api_key = os.getenv("KAT_API_KEY")
     today = datetime.today()
     # 어제 날짜
-    base_date = (today - timedelta(days=1)).strftime("%Y%m%d")
+    base_date = (today).strftime("%Y%m%d")
 
     params = {
         "serviceKey": api_key,
